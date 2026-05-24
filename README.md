@@ -9,7 +9,7 @@ The problem is that “publish an event” is easy to write but hard to make rel
 This article walks through a minimal flow:
 
 - **Order Service** creates an order and publishes `order.created`
-- **Stock Service** subscribes to `order.created` and reduces inventory
+- **Stock Service** subscribes to `order.created` and reduces inventory 
 
 Stack used in this POC:
 
@@ -112,9 +112,35 @@ Flow:
 4. Stock API receives and stores receipt (`cap.received`)
 5. Stock handler reduces inventory
 
-Diagram (text):
+### Sequence diagram
 
-`Order API → Postgres (Order + cap.published) → CAP dispatcher → NATS (order.created) → CAP subscriber → Stock API → Postgres`
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant C as Client
+    participant O as Order API
+    participant ODB as Order DB (PostgreSQL)
+    participant CAPO as CAP (Outbox)
+    participant NATS as NATS JetStream
+    participant CAPS as CAP (Subscriber)
+    participant S as Stock API
+    participant SDB as Stock DB (PostgreSQL)
+
+    C->>O: POST /orders
+
+    O->>ODB: Begin TX + insert Order
+    O->>CAPO: Enqueue integration event (order.created)
+    CAPO->>ODB: Insert into cap.published (same TX)
+    O->>ODB: Commit TX
+
+    CAPO-->>NATS: Publish order.created (async dispatcher)
+
+    NATS-->>CAPS: Deliver order.created
+    CAPS->>S: Invoke [CapSubscribe] handler
+    S->>SDB: Reduce stock (+ insert cap.received)
+    S-->>CAPS: Ack
+```
 
 ---
 
